@@ -8,6 +8,10 @@ Motion and presence detection on a bare ESP8266 using only the WiFi signal, with
 
 ![WiFi Radar dashboard](docs/screenshot.png)
 
+## Initial Setup
+
+After flashing the image to your esp8266 board/module, You'll be able to connect to the "WiFiRadar-Setup" WiFi with this password `radarsetup` and configure your WiFi network.
+
 ## Features
 
 - Runs on any ESP8266 with no additional hardware.
