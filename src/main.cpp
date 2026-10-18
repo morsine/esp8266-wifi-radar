@@ -16,8 +16,13 @@
  *   - Onboard LED    : lit while MOTION (active-low)
  *   - Web dashboard  : http://wifiradar.local  (live scope + recalibrate)
  *
- * WiFi setup: credentials are read from src/secrets.h (gitignored), so the
- * board connects to your network automatically on boot.
+ * WiFi setup: no credentials are compiled in. On first boot (or whenever
+ * saved credentials fail to connect) the board opens its own access point,
+ * "WiFiRadar-Setup" (password "radarsetup"), with a captive portal at
+ * 192.168.4.1 where you pick your network and enter the password. The
+ * choice is saved to flash, so normal boots reconnect automatically.
+ * Browse to http://wifiradar.local/resetwifi to forget the saved network
+ * and re-open the setup portal.
  */
 
 #include <ESP8266WiFi.h>
@@ -25,7 +30,7 @@
 #include <ESP8266mDNS.h>
 #include <WiFiUdp.h>
 #include <math.h>
-#include "secrets.h"   // WIFI_SSID / WIFI_PASS
+#include <WiFiManager.h>   // https://github.com/tzapu/WiFiManager
 
 // ------------------------- Tunables -------------------------
 static const uint32_t SAMPLE_INTERVAL_MS = 50;    // ~20 Hz RSSI sampling
@@ -297,18 +302,16 @@ void setup() {
   delay(50);
   Serial.println(F("\n\n=== WiFi Radar :: RSSI motion sensing ==="));
 
-  WiFi.persistent(false);
+  // WiFiManager: tries the credentials saved in flash from a previous
+  // setup. If none are saved, or they fail to connect, it brings up the
+  // "WiFiRadar-Setup" access point + captive portal so you can pick a
+  // network from a phone or laptop — no recompile needed.
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  Serial.printf("Connecting to \"%s\"", WIFI_SSID);
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 30000) {
-    delay(400);
-    Serial.print('.');
-  }
-  Serial.println();
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println(F("WiFi connect failed — restarting in 3 s."));
+  WiFiManager wm;
+  wm.setConfigPortalTimeout(180);   // give up and retry later if nobody configures it
+  Serial.println(F("Connecting to saved WiFi (or opening setup portal)..."));
+  if (!wm.autoConnect("WiFiRadar-Setup", "radarsetup")) {
+    Serial.println(F("Setup portal timed out with no WiFi configured — restarting in 3 s."));
     delay(3000);
     ESP.restart();
   }
@@ -326,6 +329,13 @@ void setup() {
   server.on("/", handleRoot);
   server.on("/data", handleData);
   server.on("/recal", []() { recalibrate(); server.send(200, "text/plain", "ok"); });
+  server.on("/resetwifi", []() {
+    server.send(200, "text/plain", "WiFi credentials erased. Restarting into setup portal \"WiFiRadar-Setup\"...");
+    delay(300);
+    WiFiManager wmReset;
+    wmReset.resetSettings();
+    ESP.restart();
+  });
   server.begin();
 
   recalibrate();                    // begin baseline calibration
